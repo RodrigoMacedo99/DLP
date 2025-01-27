@@ -1,0 +1,117 @@
+from xmlrpc.server import SimpleXMLRPCServer
+from xmlrpc.client import ServerProxy
+import threading
+import time
+import random
+import datetime
+import socket
+
+# Lista para armazenar os tempos recebidos dos clientes
+client_times = []
+
+# Função para formatar o tempo em segundos para HH:MM:SS
+def format_time(seconds):
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    seconds = int(seconds % 60)
+    return f"{hours:02}:{minutes:02}:{seconds:02}"
+
+# Função do servidor
+def run_server():
+    global client_times
+
+    def receive_time(client_time):
+        """Recebe o horário de um cliente."""
+        client_times.append(client_time)
+        print(f"[Servidor] Tempo recebido: {format_time(client_time)}")
+        return "Time received"
+
+    def synchronize_time():
+        """Calcula a média e envia ajustes aos clientes."""
+        if not client_times:
+            return []
+
+        # Calcula o tempo médio
+        average_time = sum(client_times) / len(client_times)
+        adjustments = [average_time - t for t in client_times]
+        print(f"[Servidor] Tempo médio calculado: {format_time(average_time)}")
+        client_times.clear()  # Limpa os tempos após calcular
+        return adjustments
+
+    # Garante que a porta esteja livre
+    server = None
+    for port in range(8000, 8010):  # Tenta portas de 8000 a 8009
+        try:
+            server = SimpleXMLRPCServer(("localhost", port))
+            print(f"Servidor de tempo iniciado na porta {port}...")
+            break
+        except OSError:
+            continue
+
+    if not server:
+        print("Não foi possível iniciar o servidor: todas as portas ocupadas.")
+        return
+
+    server.register_function(receive_time, "receive_time")
+    server.register_function(synchronize_time, "synchronize_time")
+    server.serve_forever()
+
+# Função do cliente
+def run_client(client_id):
+    def simulate_client_time():
+        """Simula o horário local do cliente (em segundos desde a meia-noite)."""
+        now = datetime.datetime.now()
+        return now.hour * 3600 + now.minute * 60 + now.second + random.uniform(-5, 5)
+
+    # Conecta ao servidor
+    server = None
+    for port in range(8000, 8010):
+        try:
+            server = ServerProxy(f"http://localhost:{port}/")
+            break
+        except socket.error:
+            continue
+
+    if not server:
+        print(f"[Cliente {client_id}] Não conseguiu conectar ao servidor.")
+        return
+
+    local_time = simulate_client_time()
+    print(f"[Cliente {client_id}] Tempo enviado: {format_time(local_time)}")
+    server.receive_time(local_time)
+
+    # Aguarda a sincronização
+    time.sleep(5)
+
+    # Recebe os ajustes do servidor
+    adjustments = server.synchronize_time()
+    try:
+        adjustment = float(adjustments[client_id - 1])  # Converte para float
+        adjusted_time = local_time + adjustment
+        print(f"[Cliente {client_id}] Ajuste recebido: {adjustment}")
+        print(f"[Cliente {client_id}] Tempo ajustado: {format_time(adjusted_time)}")
+    except (IndexError, ValueError):
+        print(f"[Cliente {client_id}] Erro ao processar ajuste.")
+
+# Função principal para iniciar o servidor e os clientes
+def main():
+    # Inicia o servidor em uma thread separada
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
+
+    # Aguarda o servidor iniciar
+    time.sleep(1)
+
+    # Inicia os clientes
+    client_threads = []
+    for i in range(4):  # Simula 4 computadores clientes
+        client_thread = threading.Thread(target=run_client, args=(i + 1,))
+        client_threads.append(client_thread)
+        client_thread.start()
+
+    # Aguarda todos os clientes terminarem
+    for thread in client_threads:
+        thread.join()
+
+if __name__ == "__main__":
+    main()

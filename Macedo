@@ -1,0 +1,54 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
+
+entity Atividade7 is
+    Port ( clock     : in  STD_LOGIC;
+           reset     : in  STD_LOGIC;
+           saida     : out STD_LOGIC;
+           ldr_input : in  STD_LOGIC_VECTOR(7 downto 0);
+           motor_out : out STD_LOGIC_VECTOR(3 downto 0)
+    );
+end Atividade7;
+
+architecture behavior of Atividade7 is
+    signal luminosity : INTEGER := 0;
+
+    constant THRESHOLD_HIGH : INTEGER := 59;
+    constant THRESHOLD_LOW  : INTEGER := 10;
+
+    type MOTOR_STEP_TYPE is array (0 to 3) of STD_LOGIC_VECTOR(3 downto 0);
+    constant MOTOR_STEPS_90 : MOTOR_STEP_TYPE := ("0001", "0010", "0100", "1000");
+    constant MOTOR_STEPS_NEG_90 : MOTOR_STEP_TYPE := ("1000", "0100", "0010", "0001");
+    constant MOTOR_STEPS_STOP : STD_LOGIC_VECTOR(3 downto 0) := "0000"; -- Corrigido para vetor de lógica
+    signal step_index : INTEGER := 0;
+    
+	 constant count_limit : INTEGER := 8;
+	 signal count : INTEGER := 0;
+    signal count2 : INTEGER := 0;
+
+begin
+    process(clock, reset)
+    begin
+        if reset = '1' then
+            luminosity <= 0;
+            step_index <= 0;
+            motor_out <= MOTOR_STEPS_90(0);
+        elsif rising_edge(clock) then
+            luminosity <= to_integer(unsigned(ldr_input));
+            if luminosity > THRESHOLD_HIGH and count < count_limit then
+               count2 <= (count2 + 1);
+               step_index <= (step_index + 1) mod 4;
+               motor_out <= MOTOR_STEPS_90(step_index);
+               count <= count + 1;
+            elsif luminosity > THRESHOLD_LOW and count2 < count_limit then 
+						count <= 0;
+						step_index <= (step_index + 1) mod 4;
+						motor_out <= MOTOR_STEPS_NEG_90(step_index);
+						count2 <= (count2 + 1);
+            else 
+                motor_out <= MOTOR_STEPS_STOP;
+            end if;
+        end if;
+    end process;
+end behavior;

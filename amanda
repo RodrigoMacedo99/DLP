@@ -1,0 +1,74 @@
+from xmlrpc.server import SimpleXMLRPCServer
+import xmlrpc.client
+import threading
+import time
+
+class NoAnel:
+  def __init__(self, no_id, total_nos):
+    self.no_id = no_id
+    self.coordenador = no_id
+    self.total_nos = total_nos
+
+  def eleicao(self, outros_ids):
+    max_id = max(outros_ids + [self.no_id])
+    self.coordenador = max_id
+    return max_id
+
+  def verificar_coordenador(self):
+    return self.coordenador
+
+def iniciar_servidor(no_id, porta, total_nos):
+  servidor = SimpleXMLRPCServer(("localhost", porta))
+  servidor.register_instance(NoAnel(no_id, total_nos))
+  print(f"Servidor do nó {no_id} iniciado na porta {porta}.")
+  servidor.serve_forever()
+
+def iniciar_eleicao(no_id, total_nos):
+  max_id = no_id
+  for i in range(total_nos):
+    if i != no_id:  # Ignora o nó atual
+      try:
+        cliente = xmlrpc.client.ServerProxy(f"http://localhost:800{i}")
+        max_id = max(max_id, cliente.eleicao([no_id]))
+      except ConnectionRefusedError:
+        print(f"Nó {i} está inativo.")
+  print(f"Nó {no_id}: novo coordenador é {max_id}")
+  return max_id
+
+def monitorar_coordenador(no_id, total_nos):
+  while True:
+    time.sleep(5)  # Verifica a cada 5 segundos
+    try:
+      cliente = xmlrpc.client.ServerProxy(f"http://localhost:800{no_id}")
+      coordenador = cliente.verificar_coordenador()
+      print(f"Nó {no_id}: coordenador atual é {coordenador}")
+    except ConnectionRefusedError:
+      print(f"Nó {no_id}: coordenador inativo, iniciando nova eleição.")
+      novo_coordenador = iniciar_eleicao(no_id, total_nos)
+      for i in range(total_nos):
+        if i != no_id:
+          try:
+            cliente = xmlrpc.client.ServerProxy(f"http://localhost:800{i}")
+            cliente.eleicao([novo_coordenador])
+          except ConnectionRefusedError:
+            print(f"Nó {i} está inativo.")
+
+if __name__ == "__main__":
+  total_nos = 5
+  threads = []
+  for i in range(total_nos):
+    t = threading.Thread(target=iniciar_servidor, args=(i, 8000 + i, total_nos))
+    threads.append(t)
+    t.start()
+
+  # Aguarda os servidores iniciarem
+  time.sleep(2)
+
+  # Inicia a eleição inicial
+  iniciar_eleicao(0, total_nos)
+
+  # Inicia a monitorização dos coordenadores
+  for i in range(total_nos):
+    t = threading.Thread(target=monitorar_coordenador, args=(i, total_nos))
+    threads.append(t)
+    t.start()
